@@ -15,9 +15,9 @@
  */
 package org.springframework.data.relational.core.dialect;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.jspecify.annotations.Nullable;
 
@@ -28,35 +28,74 @@ import org.jspecify.annotations.Nullable;
  * @author Roman Chigvintsev
  * @author Mark Paluch
  * @author Alexander Tochin
+ * @author Jens Schauder
  * @since 2.0
  */
 public class Escaper {
 
-	public static final Escaper DEFAULT = Escaper.of('\\');
+	public static final Escaper ANSI_LIKE_ESCAPER = Escaper.escapeLikeWith('\\');
+	public static final Escaper ANSI_LITERAL_ESCAPER = Escaper.of('\'', Set.of("'"));
+
+	/**
+	 * @deprecated since 4.2, use {@link #ANSI_LIKE_ESCAPER} instead.
+	 */
+	@Deprecated
+	public static final Escaper DEFAULT = ANSI_LIKE_ESCAPER;
 
 	private final char escapeCharacter;
-	private final List<String> toReplace;
+	private final Set<String> toReplace;
 
-	private Escaper(char escapeCharacter, List<String> toReplace) {
-
-		if (toReplace.contains(Character.toString(escapeCharacter))) {
-			throw new IllegalArgumentException(
-					String.format("'%s' and cannot be used as escape character as it should be replaced", escapeCharacter));
-		}
+	private Escaper(char escapeCharacter, Set<String> toReplace) {
 
 		this.escapeCharacter = escapeCharacter;
-		this.toReplace = toReplace;
+		this.toReplace = new HashSet<>(toReplace);
 	}
 
 	/**
-	 * Creates a new instance of this class with the given escape character.
+	 * Creates a new instance of this class with the given escape character escaping the {@code LIKE} special characters
+	 * {@code _} and {@code %}.
 	 *
 	 * @param escapeCharacter escape character
 	 * @return new instance of {@link Escaper}.
-	 * @throws IllegalArgumentException if the escape character is one of special characters ('_' and '%')
+	 * @throws IllegalArgumentException if the escape character is one of the special characters ('_' and '%')
 	 */
+	public static Escaper escapeLikeWith(char escapeCharacter) {
+
+		Set<String> toReplace = Set.of("_", "%");
+		if (toReplace.contains(Character.toString(escapeCharacter))) {
+			throw new IllegalArgumentException(
+					String.format("'%s' cannot be used as escape character as it should be replaced", escapeCharacter));
+		}
+
+		return Escaper.of(escapeCharacter, toReplace);
+	}
+
+	/**
+	 * Creates a new instance of this class with the given escape character escaping the {@code LIKE} special characters
+	 * {@code _} and {@code %}.
+	 *
+	 * @param escapeCharacter escape character
+	 * @return new instance of {@link Escaper}.
+	 * @throws IllegalArgumentException if the escape character is one of the special characters ('_' and '%')
+	 * @deprecated since 4.2, use {@link #escapeLikeWith(char)} instead.
+	 */
+	@Deprecated
 	public static Escaper of(char escapeCharacter) {
-		return new Escaper(escapeCharacter, Arrays.asList("_", "%"));
+		return escapeLikeWith(escapeCharacter);
+	}
+
+	/**
+	 * Creates a new instance of this class with the given escape character and the characters to be escaped. In contrast
+	 * to {@link #of(char)} the {@code escapeCharacter} may itself be part of {@code toReplace}; this is the standard SQL
+	 * way of escaping a single quote inside a string literal by doubling it ({@code '} &rarr; {@code ''}).
+	 *
+	 * @param escapeCharacter escape character.
+	 * @param toReplace characters/char sequences that should be escaped.
+	 * @return new instance of {@link Escaper}.
+	 * @since 4.1
+	 */
+	public static Escaper of(char escapeCharacter, Set<String> toReplace) {
+		return new Escaper(escapeCharacter, toReplace);
 	}
 
 	/**
@@ -67,7 +106,7 @@ public class Escaper {
 	 */
 	public Escaper withRewriteFor(String... chars) {
 
-		List<String> toReplace = new ArrayList<>(this.toReplace.size() + chars.length);
+		HashSet<String> toReplace = new HashSet<>(this.toReplace.size() + chars.length);
 		toReplace.addAll(this.toReplace);
 		toReplace.addAll(Arrays.asList(chars));
 
@@ -84,8 +123,8 @@ public class Escaper {
 	}
 
 	/**
-	 * Escapes all special like characters ({@code _}, {@code %}) using the configured escape character.
-	 * Escape character itself is also escaped.
+	 * Escapes all special like characters ({@code _}, {@code %}) using the configured escape character. Escape character
+	 * itself is also escaped.
 	 *
 	 * @param value value to be escaped
 	 * @return escaped value
@@ -99,6 +138,12 @@ public class Escaper {
 		String escapeCharString = String.valueOf(escapeCharacter);
 		String escapedValue = value.replace(escapeCharString, escapeCharString.repeat(2));
 		for (String character : toReplace) {
+
+			// the escape character was already doubled in the step above; doubling it again would be wrong
+			if (character.equals(escapeCharString)) {
+				continue;
+			}
+
 			escapedValue = escapedValue.replace(character, escapeCharacter + character);
 		}
 

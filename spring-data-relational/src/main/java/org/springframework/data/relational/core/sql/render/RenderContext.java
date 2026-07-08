@@ -15,6 +15,9 @@
  */
 package org.springframework.data.relational.core.sql.render;
 
+import java.util.Set;
+
+import org.springframework.data.relational.core.dialect.Escaper;
 import org.springframework.data.relational.core.dialect.InsertRenderContext;
 import org.springframework.data.relational.core.sql.IdentifierProcessing;
 
@@ -59,5 +62,16 @@ public interface RenderContext {
 	 * @since 4.1
 	 */
 	UpsertRenderContext getUpsertRenderContext();
+
+	/**
+	 * Returns the {@link Escaper} used for escaping the content of string literals. Defaults to the SQL standard of
+	 * doubling a single quote ({@code '} &rarr; {@code ''}).
+	 *
+	 * @return the {@link Escaper} used for string literal escaping.
+	 * @since 4.1
+	 */
+	default Escaper getStringLiteralEscaper() {
+		return Escaper.of('\'', Set.of("'"));
+	}
 
 }
